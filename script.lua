@@ -17,7 +17,8 @@ local interval = 0.5
 local walkSpeedEnabled = false
 local walkSpeed = 16
 local gameWalkSpeed = nil
-local defaultWalkSpeed = 16
+local speedBeforeBoost = nil
+local acceptWalkToggle = false
 local antiRagdoll = false
 local returnOnEgg = false
 local autoPlace = false
@@ -36,9 +37,10 @@ local ragdollStates = {
 local function resetWalkSpeed()
 	local character = LocalPlayer.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.WalkSpeed = defaultWalkSpeed
+	if humanoid and speedBeforeBoost then
+		humanoid.WalkSpeed = speedBeforeBoost
 	end
+	speedBeforeBoost = nil
 end
 
 local function copyCoordinates()
@@ -702,7 +704,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.22"
+local VERSION = "2026-11-02.23"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -747,8 +749,19 @@ Tab:CreateToggle({
 	CurrentValue = false,
 	Flag = "WalkSpeedEnabled",
 	Callback = function(value)
-		walkSpeedEnabled = value
-		if not value then
+		if not acceptWalkToggle then
+			return
+		end
+
+		local character = LocalPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if value then
+			if humanoid and not speedBeforeBoost then
+				speedBeforeBoost = humanoid.WalkSpeed
+			end
+			walkSpeedEnabled = true
+		else
+			walkSpeedEnabled = false
 			resetWalkSpeed()
 		end
 	end,
@@ -915,4 +928,9 @@ task.spawn(function()
 		end
 		task.wait(0.4)
 	end
+end)
+
+task.defer(function()
+	walkSpeedEnabled = false
+	acceptWalkToggle = true
 end)
