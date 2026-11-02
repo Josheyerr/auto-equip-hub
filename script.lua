@@ -236,16 +236,51 @@ local function teleportToBase()
 	task.spawn(function()
 		local target = goal.Position
 		local from = root.Position
+		local wasAnchored = root.Anchored
+		local focus = Instance.new("Part")
+		focus.Name = "EggReturnFocus"
+		focus.Anchored = true
+		focus.CanCollide = false
+		focus.CanQuery = false
+		focus.CanTouch = false
+		focus.Transparency = 1
+		focus.Size = Vector3.new(1, 1, 1)
+		focus.CFrame = CFrame.new(from)
+		focus.Parent = workspace
+
+		local function streamAt(position)
+			focus.CFrame = CFrame.new(position)
+			LocalPlayer.ReplicationFocus = focus
+			pcall(function()
+				LocalPlayer:RequestStreamAroundAsync(position, 8)
+			end)
+		end
+
+		local function release()
+			if LocalPlayer.ReplicationFocus == focus then
+				LocalPlayer.ReplicationFocus = nil
+			end
+			focus:Destroy()
+			if root.Parent then
+				root.Anchored = wasAnchored
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+			end
+			returningHome = false
+		end
+
+		root.Anchored = true
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+
 		local distance = (target - from).Magnitude
-		local markers = math.max(1, math.ceil(distance / 150))
+		local markers = math.max(1, math.ceil(distance / 100))
 		for i = 1, markers do
 			if not alive or not root.Parent or not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
-				returningHome = false
+				release()
 				return
 			end
-			pcall(function()
-				LocalPlayer:RequestStreamAroundAsync(from:Lerp(target, i / markers), 4)
-			end)
+			streamAt(from:Lerp(target, i / markers))
 		end
 
 		while alive and root.Parent and (root.Position - target).Magnitude > 6 do
@@ -258,9 +293,18 @@ local function teleportToBase()
 				gameSpeed = 16
 			end
 
-			local dt = math.min(task.wait(), 0.05)
+			local dt = task.wait()
+			if dt > 0.08 then
+				local offset = target - root.Position
+				local ahead = math.min(120, offset.Magnitude)
+				if ahead > 1 then
+					streamAt(root.Position + offset.Unit * ahead)
+				end
+				continue
+			end
+
 			local offset = target - root.Position
-			local step = math.min(gameSpeed * 0.92 * dt, offset.Magnitude)
+			local step = math.min(gameSpeed * 0.9 * dt, offset.Magnitude)
 			character:PivotTo(CFrame.new(root.Position + offset.Unit * step) * goal.Rotation)
 			root.AssemblyLinearVelocity = Vector3.zero
 			root.AssemblyAngularVelocity = Vector3.zero
@@ -277,7 +321,7 @@ local function teleportToBase()
 			end
 		end
 
-		returningHome = false
+		release()
 	end)
 end
 
@@ -317,7 +361,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.9"
+local VERSION = "2026-11-02.10"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
