@@ -212,43 +212,16 @@ local function goalCFrame()
 	return nil
 end
 
-local SPEED_KNOTS = {
-	{ 10, 18 },
-	{ 550, 25 },
-	{ 2500, 55 },
-	{ 25000, 70 },
-	{ 250000, 100 },
-	{ 2500000, 135 },
-	{ 25000000, 170 },
-	{ 100000000, 195 },
-	{ 1000000000, 197 },
-	{ 10000000000, 199 },
-	{ 1000000000000, 200 },
+local GUARD_SPEED = {
+	[1] = 14,
+	[2] = 28.5,
+	[3] = 54,
+	[4] = 78,
+	[5] = 110.5,
+	[6] = 136,
 }
 
 local guardSamples = {}
-
-local function legalCarrySpeed()
-	local stat = tonumber(LocalPlayer:GetAttribute("Speed")) or 10
-	local first = SPEED_KNOTS[1]
-	local last = SPEED_KNOTS[#SPEED_KNOTS]
-	local walk = last[2]
-	if stat <= first[1] then
-		walk = first[2]
-	elseif stat < last[1] then
-		for index = 1, #SPEED_KNOTS - 1 do
-			local left = SPEED_KNOTS[index]
-			local right = SPEED_KNOTS[index + 1]
-			if stat <= right[1] then
-				local blend = (math.log10(stat) - math.log10(left[1])) / (math.log10(right[1]) - math.log10(left[1]))
-				walk = left[2] + (right[2] - left[2]) * blend
-				break
-			end
-		end
-	end
-
-	return walk * 0.9 * 1.05
-end
 
 local function chasingGuard()
 	local runtime = workspace:FindFirstChild("Runtime")
@@ -315,6 +288,24 @@ local function guardChaseSpeed(guard)
 	return speed
 end
 
+local function returnSpeed(guard)
+	local zone = (guard and guard:GetAttribute("ZoneIndex")) or LocalPlayer:GetAttribute("ZoneIndex")
+	local base = type(zone) == "number" and GUARD_SPEED[zone] or nil
+	if zone == 6 and base then
+		return base * 1.3 * 1.02
+	end
+	if not base then
+		return gameWalkSpeed or 18
+	end
+
+	local speed = base * 1.08
+	local measured = guard and guardChaseSpeed(guard)
+	if measured then
+		speed = math.max(speed, measured * 1.08)
+	end
+	return speed
+end
+
 local function teleportToBase()
 	if returningHome then
 		return
@@ -342,8 +333,10 @@ local function teleportToBase()
 	end
 	root.Anchored = false
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if humanoid and gameWalkSpeed then
-		humanoid.WalkSpeed = gameWalkSpeed
+	if humanoid then
+		humanoid.PlatformStand = false
+		humanoid.WalkSpeed = returnSpeed(chasingGuard())
+		humanoid:MoveTo(goal.Position)
 	end
 	local leftover = workspace:FindFirstChild("EggReturnFocus")
 	if leftover then
@@ -352,24 +345,14 @@ local function teleportToBase()
 
 	task.spawn(function()
 		local target = goal.Position
-		local chaseSpeed = nil
 		while alive and root.Parent and (root.Position - target).Magnitude > 6 do
 			if not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
 				break
 			end
 
 			if humanoid and humanoid.Parent then
-				local speed = gameWalkSpeed or humanoid.WalkSpeed
-				local guard = chasingGuard()
-				local measured = guard and guardChaseSpeed(guard)
-				if measured then
-					chaseSpeed = measured
-				end
-				if chaseSpeed then
-					speed = math.min(chaseSpeed * 1.08, legalCarrySpeed())
-				end
 				humanoid.PlatformStand = false
-				humanoid.WalkSpeed = speed
+				humanoid.WalkSpeed = returnSpeed(chasingGuard())
 				humanoid:MoveTo(target)
 			end
 
@@ -419,7 +402,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.16"
+local VERSION = "2026-11-02.17"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
