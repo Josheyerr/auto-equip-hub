@@ -212,16 +212,43 @@ local function goalCFrame()
 	return nil
 end
 
-local GUARD_TOP_SPEED = {
-	[1] = 14 * 1.3,
-	[2] = 28.5 * 1.3,
-	[3] = 54 * 1.3,
-	[4] = 78 * 1.3,
-	[5] = 110.5 * 1.3,
-	[6] = 136 * 1.3,
+local SPEED_KNOTS = {
+	{ 10, 18 },
+	{ 550, 25 },
+	{ 2500, 55 },
+	{ 25000, 70 },
+	{ 250000, 100 },
+	{ 2500000, 135 },
+	{ 25000000, 170 },
+	{ 100000000, 195 },
+	{ 1000000000, 197 },
+	{ 10000000000, 199 },
+	{ 1000000000000, 200 },
 }
 
 local guardSamples = {}
+
+local function legalCarrySpeed()
+	local stat = tonumber(LocalPlayer:GetAttribute("Speed")) or 10
+	local first = SPEED_KNOTS[1]
+	local last = SPEED_KNOTS[#SPEED_KNOTS]
+	local walk = last[2]
+	if stat <= first[1] then
+		walk = first[2]
+	elseif stat < last[1] then
+		for index = 1, #SPEED_KNOTS - 1 do
+			local left = SPEED_KNOTS[index]
+			local right = SPEED_KNOTS[index + 1]
+			if stat <= right[1] then
+				local blend = (math.log10(stat) - math.log10(left[1])) / (math.log10(right[1]) - math.log10(left[1]))
+				walk = left[2] + (right[2] - left[2]) * blend
+				break
+			end
+		end
+	end
+
+	return walk * 0.9 * 1.05
+end
 
 local function chasingGuard()
 	local runtime = workspace:FindFirstChild("Runtime")
@@ -334,20 +361,12 @@ local function teleportToBase()
 			if humanoid and humanoid.Parent then
 				local speed = gameWalkSpeed or humanoid.WalkSpeed
 				local guard = chasingGuard()
-				if guard then
-					local zone = guard:GetAttribute("ZoneIndex")
-					local topSpeed = type(zone) == "number" and GUARD_TOP_SPEED[zone] or nil
-					local measured = guardChaseSpeed(guard)
-					local fastest = topSpeed or 0
-					if measured and measured > fastest then
-						fastest = measured
-					end
-					if fastest > 0 then
-						chaseSpeed = math.max(chaseSpeed or 0, fastest)
-					end
+				local measured = guard and guardChaseSpeed(guard)
+				if measured then
+					chaseSpeed = measured
 				end
 				if chaseSpeed then
-					speed = chaseSpeed * 1.08
+					speed = math.min(chaseSpeed * 1.08, legalCarrySpeed())
 				end
 				humanoid.PlatformStand = false
 				humanoid.WalkSpeed = speed
@@ -400,7 +419,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.15"
+local VERSION = "2026-11-02.16"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
