@@ -1,3 +1,7 @@
+if game.PlaceId ~= 129852792970565 then
+	return
+end
+
 if getgenv().AutoEquipHub and getgenv().AutoEquipHub.Unload then
 	getgenv().AutoEquipHub.Unload()
 end
@@ -1200,7 +1204,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.38"
+local VERSION = "2026-11-02.39"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Raise a Cat Boy",
