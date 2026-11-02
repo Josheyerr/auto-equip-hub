@@ -5,6 +5,7 @@ end
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local CollectionService = game:GetService("CollectionService")
+local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -21,6 +22,8 @@ local speedBeforeBoost = nil
 local acceptWalkToggle = false
 local antiRagdoll = false
 local returnOnEgg = false
+local autoPath = false
+local pathToken = 0
 local autoPlace = false
 local autoHatch = false
 local savedCameraShake = nil
@@ -676,12 +679,138 @@ local function restoreRagdollHooks()
 	table.clear(ragdollOriginals)
 end
 
+local ZONE_REQUIRED_SPEED = {
+	[1] = 10,
+	[2] = 900,
+	[3] = 10000,
+	[4] = 170000,
+	[5] = 2500000,
+	[6] = 18000000,
+}
+
+local RARITY_RANK = {
+	Common = 1,
+	Rare = 2,
+	Epic = 3,
+	Legendary = 4,
+	Mythic = 5,
+	Relic = 6,
+	Exotic = 7,
+	Ascendant = 8,
+	Secret = 9,
+	SuperSecret = 10,
+	Divine = 11,
+	Exclusive = 12,
+}
+
+local function worldEggPosition(inst)
+	if inst:IsA("Model") then
+		local part = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
+		if part then
+			return part.Position
+		end
+		return inst:GetPivot().Position
+	end
+	if inst:IsA("BasePart") then
+		return inst.Position
+	end
+	return nil
+end
+
+local function bestReachableEgg()
+	local speed = tonumber(LocalPlayer:GetAttribute("Speed")) or 0
+	local character = LocalPlayer.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+		return nil
+	end
+
+	local bestRank = -1
+	local bestDistance = math.huge
+	local bestPosition = nil
+	for _, inst in CollectionService:GetTagged("WorldEgg") do
+		local carriedBy = inst:GetAttribute("CarriedBy")
+		if type(carriedBy) == "number" and carriedBy ~= 0 then
+			continue
+		end
+
+		local zone = inst:GetAttribute("Zone")
+		if type(zone) ~= "number" then
+			zone = inst:GetAttribute("ZoneIndex")
+		end
+		local required = type(zone) == "number" and ZONE_REQUIRED_SPEED[zone] or nil
+		if not required or speed < required then
+			continue
+		end
+
+		local rarity = inst:GetAttribute("Rarity")
+		local rank = type(rarity) == "string" and RARITY_RANK[rarity] or 0
+		local position = worldEggPosition(inst)
+		if not position then
+			continue
+		end
+
+		local distance = (position - root.Position).Magnitude
+		if rank > bestRank or (rank == bestRank and distance < bestDistance) then
+			bestRank = rank
+			bestDistance = distance
+			bestPosition = position
+		end
+	end
+
+	return bestPosition
+end
+
+local function followPath(humanoid, root, destination, token)
+	local path = PathfindingService:CreatePath({
+		AgentRadius = 2,
+		AgentHeight = 5,
+		AgentCanJump = true,
+		WaypointSpacing = 4,
+	})
+	local computed = pcall(function()
+		path:ComputeAsync(root.Position, destination)
+	end)
+	if not computed or path.Status ~= Enum.PathStatus.Success then
+		humanoid:MoveTo(destination)
+		return
+	end
+
+	for _, waypoint in path:GetWaypoints() do
+		if token ~= pathToken or not autoPath or not alive then
+			return
+		end
+		if isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+			return
+		end
+		if waypoint.Action == Enum.PathWaypointAction.Jump then
+			humanoid.Jump = true
+		end
+		humanoid:MoveTo(waypoint.Position)
+		local arrived = false
+		local connection = humanoid.MoveToFinished:Connect(function()
+			arrived = true
+		end)
+		local started = os.clock()
+		while not arrived and os.clock() - started < 4 do
+			if token ~= pathToken or not autoPath or not alive then
+				connection:Disconnect()
+				return
+			end
+			task.wait(0.1)
+		end
+		connection:Disconnect()
+	end
+end
+
 local function unload()
 	alive = false
 	autoEquip = false
 	walkSpeedEnabled = false
 	antiRagdoll = false
 	returnOnEgg = false
+	autoPath = false
+	pathToken = pathToken + 1
 	autoPlace = false
 	autoHatch = false
 	setHatchCamera(false)
@@ -704,7 +833,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.23"
+local VERSION = "2026-11-02.24"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -801,11 +930,12 @@ Tab:CreateToggle({
 Tab:CreateSection("Egg")
 
 Tab:CreateToggle({
-	Name = "Teleport Home On Egg",
+	Name = "Auto Pathing",
 	CurrentValue = false,
-	Flag = "ReturnOnEgg",
+	Flag = "AutoPath",
 	Callback = function(value)
-		returnOnEgg = value
+		autoPath = value
+		pathToken = pathToken + 1
 	end,
 })
 
@@ -897,7 +1027,7 @@ do
 		local pickedUp = returnOnEgg and isCarryingEgg(value) and not isCarryingEgg(lastCarry)
 		lastCarry = value
 		if pickedUp then
-			teleportToBase()
+			pathToken = pathToken + 1
 		end
 	end)
 end
@@ -925,6 +1055,22 @@ task.spawn(function()
 		if autoHatch then
 			setHatchCamera(true)
 			pcall(hatchOneEgg)
+		end
+		task.wait(0.4)
+	end
+end)
+
+task.spawn(function()
+	while alive do
+		if autoPath then
+			local destination = bestReachableEgg()
+			local character = LocalPlayer.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if destination and humanoid and root then
+				pathToken = pathToken + 1
+				followPath(humanoid, root, destination, pathToken)
+			end
 		end
 		task.wait(0.4)
 	end
