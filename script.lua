@@ -212,6 +212,73 @@ local function goalCFrame()
 	return nil
 end
 
+local guardSamples = {}
+
+local function chasingGuard()
+	local runtime = workspace:FindFirstChild("Runtime")
+	local guards = runtime and runtime:FindFirstChild("Guards")
+	if not guards then
+		return nil
+	end
+
+	local zone = LocalPlayer:GetAttribute("ZoneIndex")
+	local fallback = nil
+	for _, child in guards:GetChildren() do
+		if child:GetAttribute("TargetUserId") == LocalPlayer.UserId then
+			if child:GetAttribute("ZoneIndex") == zone then
+				return child
+			end
+			fallback = fallback or child
+		end
+	end
+
+	return fallback
+end
+
+local function guardPosition(guard)
+	local root = guard:FindFirstChild("Root")
+	if root and root:IsA("BasePart") then
+		return root.Position
+	end
+	if guard:IsA("Model") then
+		return guard:GetPivot().Position
+	end
+	if guard:IsA("BasePart") then
+		return guard.Position
+	end
+	return nil
+end
+
+local function guardChaseSpeed(guard)
+	local position = guardPosition(guard)
+	if not position then
+		return nil
+	end
+
+	local now = os.clock()
+	local previous = guardSamples[guard]
+	guardSamples[guard] = {
+		position = position,
+		time = now,
+	}
+	if not previous then
+		return nil
+	end
+
+	local elapsed = now - previous.time
+	if elapsed < 0.05 then
+		return nil
+	end
+
+	local delta = position - previous.position
+	local speed = Vector3.new(delta.X, 0, delta.Z).Magnitude / elapsed
+	if speed ~= speed or speed < 2 or speed > 200 then
+		return nil
+	end
+
+	return speed
+end
+
 local function teleportToBase()
 	if returningHome then
 		return
@@ -255,13 +322,23 @@ local function teleportToBase()
 			end
 
 			if humanoid and humanoid.Parent then
+				local speed = gameWalkSpeed or humanoid.WalkSpeed
+				local guard = chasingGuard()
+				local chaseSpeed = guard and guardChaseSpeed(guard)
+				if chaseSpeed then
+					speed = chaseSpeed * 1.08
+				end
 				humanoid.PlatformStand = false
+				humanoid.WalkSpeed = speed
 				humanoid:MoveTo(target)
 			end
 
 			task.wait(0.1)
 		end
 
+		if humanoid and humanoid.Parent and gameWalkSpeed then
+			humanoid.WalkSpeed = gameWalkSpeed
+		end
 		returningHome = false
 	end)
 end
@@ -302,7 +379,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.13"
+local VERSION = "2026-11-02.14"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
