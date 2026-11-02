@@ -235,6 +235,19 @@ local function teleportToBase()
 	returningHome = true
 	task.spawn(function()
 		local target = goal.Position
+		local from = root.Position
+		local distance = (target - from).Magnitude
+		local markers = math.max(1, math.ceil(distance / 150))
+		for i = 1, markers do
+			if not alive or not root.Parent or not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+				returningHome = false
+				return
+			end
+			pcall(function()
+				LocalPlayer:RequestStreamAroundAsync(from:Lerp(target, i / markers), 4)
+			end)
+		end
+
 		while alive and root.Parent and (root.Position - target).Magnitude > 6 do
 			if not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
 				break
@@ -245,7 +258,7 @@ local function teleportToBase()
 				gameSpeed = 16
 			end
 
-			local dt = task.wait()
+			local dt = math.min(task.wait(), 0.05)
 			local offset = target - root.Position
 			local step = math.min(gameSpeed * 0.92 * dt, offset.Magnitude)
 			character:PivotTo(CFrame.new(root.Position + offset.Unit * step) * goal.Rotation)
@@ -304,7 +317,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.8"
+local VERSION = "2026-11-02.9"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
