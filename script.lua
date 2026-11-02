@@ -212,6 +212,15 @@ local function goalCFrame()
 	return nil
 end
 
+local GUARD_TOP_SPEED = {
+	[1] = 14 * 1.3,
+	[2] = 28.5 * 1.3,
+	[3] = 54 * 1.3,
+	[4] = 78 * 1.3,
+	[5] = 110.5 * 1.3,
+	[6] = 136 * 1.3,
+}
+
 local guardSamples = {}
 
 local function chasingGuard()
@@ -272,7 +281,7 @@ local function guardChaseSpeed(guard)
 
 	local delta = position - previous.position
 	local speed = Vector3.new(delta.X, 0, delta.Z).Magnitude / elapsed
-	if speed ~= speed or speed < 2 or speed > 200 then
+	if speed ~= speed or speed < 2 or speed > 400 then
 		return nil
 	end
 
@@ -316,6 +325,7 @@ local function teleportToBase()
 
 	task.spawn(function()
 		local target = goal.Position
+		local chaseSpeed = nil
 		while alive and root.Parent and (root.Position - target).Magnitude > 6 do
 			if not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
 				break
@@ -324,7 +334,18 @@ local function teleportToBase()
 			if humanoid and humanoid.Parent then
 				local speed = gameWalkSpeed or humanoid.WalkSpeed
 				local guard = chasingGuard()
-				local chaseSpeed = guard and guardChaseSpeed(guard)
+				if guard then
+					local zone = guard:GetAttribute("ZoneIndex")
+					local topSpeed = type(zone) == "number" and GUARD_TOP_SPEED[zone] or nil
+					local measured = guardChaseSpeed(guard)
+					local fastest = topSpeed or 0
+					if measured and measured > fastest then
+						fastest = measured
+					end
+					if fastest > 0 then
+						chaseSpeed = math.max(chaseSpeed or 0, fastest)
+					end
+				end
 				if chaseSpeed then
 					speed = chaseSpeed * 1.08
 				end
@@ -379,7 +400,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.14"
+local VERSION = "2026-11-02.15"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
