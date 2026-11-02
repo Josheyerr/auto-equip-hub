@@ -22,6 +22,8 @@ local antiRagdoll = false
 local returnOnEgg = false
 local autoPlace = false
 local autoHatch = false
+local savedCameraShake = nil
+local cameraShakeHeld = false
 local carryConnection = nil
 local ragdollOriginals = {}
 local notifyOriginals = {}
@@ -533,6 +535,37 @@ local function placeOneEgg()
 	})
 end
 
+local function setHatchCamera(enabled)
+	if enabled then
+		if not cameraShakeHeld then
+			savedCameraShake = LocalPlayer:GetAttribute("Set_CameraShake")
+			cameraShakeHeld = true
+		end
+		LocalPlayer:SetAttribute("Set_CameraShake", false)
+
+		local shared = ReplicatedStorage:FindFirstChild("Shared")
+		local kit = shared and shared:FindFirstChild("Kit")
+		local fovModule = kit and kit:FindFirstChild("CameraFov")
+		local shakeModule = kit and kit:FindFirstChild("CameraShake")
+		if fovModule then
+			pcall(function()
+				require(fovModule).Set("Hatch", 0)
+			end)
+		end
+		if shakeModule then
+			pcall(function()
+				local shake = require(shakeModule)
+				if shake.Stop then
+					shake.Stop()
+				end
+			end)
+		end
+	elseif cameraShakeHeld then
+		LocalPlayer:SetAttribute("Set_CameraShake", savedCameraShake)
+		cameraShakeHeld = false
+	end
+end
+
 local function hatchOneEgg()
 	if typeof(fireproximityprompt) ~= "function" then
 		return
@@ -649,6 +682,7 @@ local function unload()
 	returnOnEgg = false
 	autoPlace = false
 	autoHatch = false
+	setHatchCamera(false)
 	returningHome = false
 	if carryConnection then
 		carryConnection:Disconnect()
@@ -668,7 +702,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.21"
+local VERSION = "2026-11-02.22"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -779,6 +813,9 @@ Tab:CreateToggle({
 	Flag = "AutoHatch",
 	Callback = function(value)
 		autoHatch = value
+		if not value then
+			setHatchCamera(false)
+		end
 	end,
 })
 
@@ -873,6 +910,7 @@ task.spawn(function()
 			pcall(placeOneEgg)
 		end
 		if autoHatch then
+			setHatchCamera(true)
 			pcall(hatchOneEgg)
 		end
 		task.wait(0.4)
