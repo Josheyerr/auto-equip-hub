@@ -16,6 +16,7 @@ local autoEquip = false
 local interval = 0.5
 local walkSpeedEnabled = false
 local walkSpeed = 16
+local gameWalkSpeed = nil
 local defaultWalkSpeed = 16
 local antiRagdoll = false
 local returnOnEgg = false
@@ -237,6 +238,10 @@ local function teleportToBase()
 		LocalPlayer.ReplicationFocus = nil
 	end
 	root.Anchored = false
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid and gameWalkSpeed then
+		humanoid.WalkSpeed = gameWalkSpeed
+	end
 	local leftover = workspace:FindFirstChild("EggReturnFocus")
 	if leftover then
 		leftover:Destroy()
@@ -244,20 +249,13 @@ local function teleportToBase()
 
 	task.spawn(function()
 		local target = goal.Position
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		while alive and root.Parent and (root.Position - target).Magnitude > 6 do
 			if not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
 				break
 			end
 
-			local gameSpeed = tonumber(LocalPlayer:GetAttribute("Speed"))
-			if not gameSpeed or gameSpeed ~= gameSpeed or gameSpeed <= 0 then
-				gameSpeed = 16
-			end
-
 			if humanoid and humanoid.Parent then
 				humanoid.PlatformStand = false
-				humanoid.WalkSpeed = gameSpeed
 				humanoid:MoveTo(target)
 			end
 
@@ -304,7 +302,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.12"
+local VERSION = "2026-11-02.13"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -459,12 +457,14 @@ end
 
 task.spawn(function()
 	while alive do
-		if walkSpeedEnabled and not returningHome then
-			local character = LocalPlayer.Character
-			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-			if humanoid and humanoid.WalkSpeed ~= walkSpeed then
+		local character = LocalPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid and walkSpeedEnabled and not returningHome then
+			if humanoid.WalkSpeed ~= walkSpeed then
 				humanoid.WalkSpeed = walkSpeed
 			end
+		elseif humanoid and not walkSpeedEnabled and not returningHome then
+			gameWalkSpeed = humanoid.WalkSpeed
 		end
 		task.wait(0.1)
 	end
