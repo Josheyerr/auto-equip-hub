@@ -233,56 +233,13 @@ local function teleportToBase()
 	end
 
 	returningHome = true
+	if LocalPlayer.ReplicationFocus then
+		LocalPlayer.ReplicationFocus = nil
+	end
+	root.Anchored = false
+
 	task.spawn(function()
 		local target = goal.Position
-		local from = root.Position
-		local wasAnchored = root.Anchored
-		local focus = Instance.new("Part")
-		focus.Name = "EggReturnFocus"
-		focus.Anchored = true
-		focus.CanCollide = false
-		focus.CanQuery = false
-		focus.CanTouch = false
-		focus.Transparency = 1
-		focus.Size = Vector3.new(1, 1, 1)
-		focus.CFrame = CFrame.new(from)
-		focus.Parent = workspace
-
-		local function streamAt(position)
-			focus.CFrame = CFrame.new(position)
-			LocalPlayer.ReplicationFocus = focus
-			pcall(function()
-				LocalPlayer:RequestStreamAroundAsync(position, 8)
-			end)
-		end
-
-		local function release()
-			if LocalPlayer.ReplicationFocus == focus then
-				LocalPlayer.ReplicationFocus = nil
-			end
-			focus:Destroy()
-			if root.Parent then
-				root.Anchored = wasAnchored
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-			end
-			returningHome = false
-		end
-
-		root.Anchored = true
-		root.AssemblyLinearVelocity = Vector3.zero
-		root.AssemblyAngularVelocity = Vector3.zero
-
-		local distance = (target - from).Magnitude
-		local markers = math.max(1, math.ceil(distance / 100))
-		for i = 1, markers do
-			if not alive or not root.Parent or not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
-				release()
-				return
-			end
-			streamAt(from:Lerp(target, i / markers))
-		end
-
 		while alive and root.Parent and (root.Position - target).Magnitude > 6 do
 			if not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
 				break
@@ -294,12 +251,9 @@ local function teleportToBase()
 			end
 
 			local dt = task.wait()
-			if dt > 0.08 then
-				local offset = target - root.Position
-				local ahead = math.min(120, offset.Magnitude)
-				if ahead > 1 then
-					streamAt(root.Position + offset.Unit * ahead)
-				end
+			if dt > 0.1 then
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
 				continue
 			end
 
@@ -311,9 +265,6 @@ local function teleportToBase()
 		end
 
 		if alive and root.Parent and isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
-			character:PivotTo(goal)
-			root.AssemblyLinearVelocity = Vector3.zero
-			root.AssemblyAngularVelocity = Vector3.zero
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
 				humanoid.PlatformStand = false
@@ -321,7 +272,7 @@ local function teleportToBase()
 			end
 		end
 
-		release()
+		returningHome = false
 	end)
 end
 
@@ -361,7 +312,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.10"
+local VERSION = "2026-11-02.11"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
