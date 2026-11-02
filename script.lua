@@ -90,15 +90,18 @@ Tab:CreateToggle({
 	end,
 })
 
-Tab:CreateSlider({
+Tab:CreateInput({
 	Name = "Walk Speed",
-	Range = {16, 250},
-	Increment = 1,
-	Suffix = " speed",
-	CurrentValue = 16,
-	Flag = "WalkSpeed",
-	Callback = function(value)
-		walkSpeed = value
+	PlaceholderText = "Type a speed",
+	CurrentValue = "16",
+	Numeric = true,
+	Finished = true,
+	Flag = "WalkSpeedInput",
+	Callback = function(text)
+		local value = tonumber(text)
+		if value then
+			walkSpeed = value
+		end
 	end,
 })
 
