@@ -16,6 +16,13 @@ local interval = 0.5
 local walkSpeedEnabled = false
 local walkSpeed = 16
 local defaultWalkSpeed = 16
+local antiRagdoll = false
+local ragdollOriginals = {}
+local ragdollStates = {
+	Enum.HumanoidStateType.Physics,
+	Enum.HumanoidStateType.Ragdoll,
+	Enum.HumanoidStateType.FallingDown,
+}
 
 local function resetWalkSpeed()
 	local character = LocalPlayer.Character
@@ -57,11 +64,87 @@ local function copyCoordinates()
 	})
 end
 
+local function applyAntiRagdoll()
+	local character = LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	for _, state in ragdollStates do
+		humanoid:SetStateEnabled(state, false)
+	end
+
+	if humanoid.PlatformStand then
+		humanoid.PlatformStand = false
+	end
+
+	local state = humanoid:GetState()
+	if state == Enum.HumanoidStateType.Physics
+		or state == Enum.HumanoidStateType.Ragdoll
+		or state == Enum.HumanoidStateType.FallingDown
+	then
+		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+	end
+end
+
+local function restoreRagdollStates()
+	local character = LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	for _, state in ragdollStates do
+		humanoid:SetStateEnabled(state, true)
+	end
+end
+
+local function hookRagdoll(event)
+	if typeof(getconnections) ~= "function" or typeof(hookfunction) ~= "function" then
+		return
+	end
+
+	for _, connection in getconnections(event.OnClientEvent) do
+		local callback = connection.Function
+		if typeof(callback) == "function" and ragdollOriginals[callback] == nil then
+			local old
+			local ok, original = pcall(function()
+				old = hookfunction(callback, function(...)
+					if antiRagdoll then
+						return
+					end
+					return old(...)
+				end)
+				return old
+			end)
+			if ok and typeof(original) == "function" then
+				ragdollOriginals[callback] = original
+			end
+		end
+	end
+end
+
+local function restoreRagdollHooks()
+	if typeof(hookfunction) ~= "function" then
+		table.clear(ragdollOriginals)
+		return
+	end
+
+	for callback, original in ragdollOriginals do
+		pcall(hookfunction, callback, original)
+	end
+	table.clear(ragdollOriginals)
+end
+
 local function unload()
 	alive = false
 	autoEquip = false
 	walkSpeedEnabled = false
+	antiRagdoll = false
 	pcall(resetWalkSpeed)
+	pcall(restoreRagdollStates)
+	pcall(restoreRagdollHooks)
 	getgenv().AutoEquipHub = nil
 	pcall(function()
 		Rayfield:Destroy()
@@ -137,6 +220,22 @@ Tab:CreateInput({
 	end,
 })
 
+Tab:CreateSection("Ragdoll")
+
+Tab:CreateToggle({
+	Name = "Anti Ragdoll",
+	CurrentValue = false,
+	Flag = "AntiRagdoll",
+	Callback = function(value)
+		antiRagdoll = value
+		if value then
+			applyAntiRagdoll()
+		else
+			restoreRagdollStates()
+		end
+	end,
+})
+
 Tab:CreateSection("Coordinates")
 
 Tab:CreateButton({
@@ -166,6 +265,17 @@ task.spawn(function()
 			end)
 		end
 		task.wait(interval)
+	end
+end)
+
+task.spawn(function()
+	local event = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Ragdoll")
+	while alive do
+		pcall(hookRagdoll, event)
+		if antiRagdoll then
+			pcall(applyAntiRagdoll)
+		end
+		task.wait(0.1)
 	end
 end)
 
