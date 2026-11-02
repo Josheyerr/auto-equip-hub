@@ -24,6 +24,7 @@ local acceptWalkToggle = false
 local antiRagdoll = false
 local returnOnEgg = false
 local autoPath = false
+local eggsBeforeReturn = 5
 local pathToken = 0
 local autoPlace = false
 local autoHatch = false
@@ -903,7 +904,7 @@ local function followPath(humanoid, root, destination, token, stopIfCarrying, eg
 		end
 
 		local carrying = isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg"))
-		if stopIfCarrying and carrying then
+		if stopIfCarrying and (carrying or #eggItemIds() >= eggsBeforeReturn) then
 			clearPathLine()
 			return
 		end
@@ -946,7 +947,7 @@ local function followPath(humanoid, root, destination, token, stopIfCarrying, eg
 			if playerSteering() or (not stopIfCarrying and not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg"))) then
 				break
 			end
-			if stopIfCarrying and isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+			if stopIfCarrying and (isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) or #eggItemIds() >= eggsBeforeReturn) then
 				break
 			end
 			if eggToSteal and root.Parent and (root.Position - destination).Magnitude <= 12 then
@@ -1014,7 +1015,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.27"
+local VERSION = "2026-11-02.28"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -1120,6 +1121,18 @@ Tab:CreateToggle({
 		if not value then
 			clearPathLine()
 		end
+	end,
+})
+
+Tab:CreateSlider({
+	Name = "Eggs Before Return",
+	Range = {1, 10},
+	Increment = 1,
+	Suffix = " eggs",
+	CurrentValue = 5,
+	Flag = "EggsBeforeReturn",
+	Callback = function(value)
+		eggsBeforeReturn = value
 	end,
 })
 
@@ -1253,7 +1266,9 @@ task.spawn(function()
 			if humanoid and root then
 				pathToken = pathToken + 1
 				local token = pathToken
-				if isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+				local carryingEgg = isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg"))
+				local inventoryFull = #eggItemIds() >= eggsBeforeReturn
+				if carryingEgg or inventoryFull then
 					local home = goalCFrame()
 					if home and (root.Position - home.Position).Magnitude > 8 then
 						followPath(humanoid, root, home.Position, token, false)
