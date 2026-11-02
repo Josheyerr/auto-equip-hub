@@ -29,6 +29,8 @@ local pathToken = 0
 local autoPlace = false
 local autoHatch = false
 local autoSell = false
+local autoClaimIndex = false
+local nextClaimAt = 0
 local nextSellAt = 0
 local sellRarities = {
 	Common = true,
@@ -579,6 +581,21 @@ local function setHatchCamera(enabled)
 	end
 end
 
+local function claimIndex()
+	if os.clock() < nextClaimAt then
+		return
+	end
+
+	local remote = ReplicatedStorage:FindFirstChild("Remotes")
+	remote = remote and remote:FindFirstChild("RequestIndexClaim")
+	if not remote then
+		return
+	end
+
+	remote:FireServer({})
+	nextClaimAt = os.clock() + 1
+end
+
 local function sellSelected()
 	if os.clock() < nextSellAt then
 		return
@@ -1038,6 +1055,7 @@ local function unload()
 	autoPlace = false
 	autoHatch = false
 	autoSell = false
+	autoClaimIndex = false
 	setHatchCamera(false)
 	returningHome = false
 	if carryConnection then
@@ -1058,7 +1076,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.29"
+local VERSION = "2026-11-02.30"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -1203,6 +1221,15 @@ Tab:CreateToggle({
 })
 
 Tab:CreateToggle({
+	Name = "Auto Claim Index",
+	CurrentValue = false,
+	Flag = "AutoClaimIndex",
+	Callback = function(value)
+		autoClaimIndex = value
+	end,
+})
+
+Tab:CreateToggle({
 	Name = "Auto Sell",
 	CurrentValue = false,
 	Flag = "AutoSell",
@@ -1339,6 +1366,9 @@ task.spawn(function()
 		end
 		if autoSell then
 			pcall(sellSelected)
+		end
+		if autoClaimIndex then
+			pcall(claimIndex)
 		end
 		task.wait(0.4)
 	end
