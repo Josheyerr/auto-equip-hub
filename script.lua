@@ -1200,11 +1200,11 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.37"
+local VERSION = "2026-11-02.38"
 
 local Window = Rayfield:CreateWindow({
-	Name = "Auto Equip",
-	LoadingTitle = "Auto Equip",
+	Name = "Raise a Cat Boy",
+	LoadingTitle = "Raise a Cat Boy",
 	LoadingSubtitle = VERSION,
 	ConfigurationSaving = {
 		Enabled = true,
