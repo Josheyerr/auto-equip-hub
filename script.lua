@@ -30,6 +30,8 @@ local autoPlace = false
 local autoHatch = false
 local autoSell = false
 local autoClaimIndex = false
+local autoBat = false
+local nextBatSwing = 0
 local nextClaimAt = 0
 local nextSellAt = 0
 local sellRarities = {
@@ -595,6 +597,66 @@ local function setHatchCamera(enabled)
 	end
 end
 
+local BAT_REACH = 11
+local BAT_ARC = 200
+
+local function inBatRange(root, targetPosition)
+	local offset = targetPosition - root.Position
+	local flat = Vector3.new(offset.X, 0, offset.Z)
+	if flat.Magnitude > BAT_REACH or flat.Magnitude < 0.5 then
+		return false
+	end
+
+	local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+	if look.Magnitude < 0.1 then
+		return true
+	end
+
+	local angle = math.deg(math.acos(math.clamp(look.Unit:Dot(flat.Unit), -1, 1)))
+	return angle <= BAT_ARC / 2
+end
+
+local function targetInBatRange(root)
+	for _, player in Players:GetPlayers() do
+		if player ~= LocalPlayer and player.Character then
+			local otherRoot = player.Character:FindFirstChild("HumanoidRootPart")
+			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+			if otherRoot and humanoid and humanoid.Health > 0 and inBatRange(root, otherRoot.Position) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function swingBat()
+	if os.clock() < nextBatSwing then
+		return
+	end
+
+	local character = LocalPlayer.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not character or not root or not targetInBatRange(root) then
+		return
+	end
+
+	local bat = character:FindFirstChild("Bat")
+	if not bat then
+		local backpack = LocalPlayer:FindFirstChild("Backpack")
+		bat = backpack and backpack:FindFirstChild("Bat")
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if bat and humanoid then
+			humanoid:EquipTool(bat)
+		end
+		return
+	end
+
+	if bat:IsA("Tool") then
+		bat:Activate()
+		nextBatSwing = os.clock() + 0.65
+	end
+end
+
 local function claimIndex()
 	if os.clock() < nextClaimAt then
 		return
@@ -1104,6 +1166,7 @@ local function unload()
 	autoHatch = false
 	autoSell = false
 	autoClaimIndex = false
+	autoBat = false
 	setHatchCamera(false)
 	returningHome = false
 	if carryConnection then
@@ -1124,7 +1187,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.35"
+local VERSION = "2026-11-02.36"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -1199,6 +1262,17 @@ Tab:CreateInput({
 		if value then
 			walkSpeed = value
 		end
+	end,
+})
+
+Tab:CreateSection("Bat")
+
+Tab:CreateToggle({
+	Name = "Auto Bat",
+	CurrentValue = false,
+	Flag = "AutoBat",
+	Callback = function(value)
+		autoBat = value
 	end,
 })
 
@@ -1499,6 +1573,15 @@ task.spawn(function()
 			end
 		end
 		task.wait(0.05)
+	end
+end)
+
+task.spawn(function()
+	while alive do
+		if autoBat then
+			pcall(swingBat)
+		end
+		task.wait(0.1)
 	end
 end)
 
