@@ -25,6 +25,38 @@ local function resetWalkSpeed()
 	end
 end
 
+local function copyCoordinates()
+	local character = LocalPlayer.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		Rayfield:Notify({
+			Title = "Copy Coordinates",
+			Content = "Character is not loaded yet.",
+			Duration = 3,
+		})
+		return
+	end
+
+	local position = root.Position
+	local text = string.format("%.2f, %.2f, %.2f", position.X, position.Y, position.Z)
+	local clipboard = setclipboard or toclipboard
+	if not clipboard then
+		Rayfield:Notify({
+			Title = "Copy Coordinates",
+			Content = "Clipboard is not available in this executor.",
+			Duration = 3,
+		})
+		return
+	end
+
+	clipboard(text)
+	Rayfield:Notify({
+		Title = "Coordinates Copied",
+		Content = text,
+		Duration = 3,
+	})
+end
+
 local function unload()
 	alive = false
 	autoEquip = false
@@ -102,6 +134,15 @@ Tab:CreateInput({
 		if value then
 			walkSpeed = value
 		end
+	end,
+})
+
+Tab:CreateSection("Coordinates")
+
+Tab:CreateButton({
+	Name = "Copy Coordinates",
+	Callback = function()
+		copyCoordinates()
 	end,
 })
 
