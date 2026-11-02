@@ -20,6 +20,8 @@ local gameWalkSpeed = nil
 local defaultWalkSpeed = 16
 local antiRagdoll = false
 local returnOnEgg = false
+local autoPlace = false
+local autoHatch = false
 local carryConnection = nil
 local ragdollOriginals = {}
 local ragdollStates = {
@@ -371,6 +373,150 @@ local function teleportToBase()
 	end)
 end
 
+local function myBase()
+	local slot = LocalPlayer:GetAttribute("PlotSlot")
+	local userId = LocalPlayer.UserId
+	local slotted = nil
+	for _, inst in CollectionService:GetTagged("Base") do
+		if inst:IsA("Model") then
+			if inst:GetAttribute("OwnerUserId") == userId then
+				return inst
+			end
+			if type(slot) == "number" and inst:GetAttribute("BaseIndex") == slot then
+				slotted = inst
+			end
+		end
+	end
+	if slotted then
+		return slotted
+	end
+	local bases = workspace:FindFirstChild("Bases")
+	if bases and type(slot) == "number" then
+		return bases:FindFirstChild("Base" .. tostring(slot))
+	end
+	return nil
+end
+
+local function snapQuarter(value)
+	return math.floor(value / 0.25 + 0.5) * 0.25
+end
+
+local function eggItemIds()
+	local ids = {}
+	local seen = {}
+	local function scan(container)
+		if not container then
+			return
+		end
+		for _, child in container:GetChildren() do
+			if child:IsA("Tool") and child:GetAttribute("ItemKind") == "Egg" then
+				local id = child:GetAttribute("ItemId")
+				if type(id) == "string" and id ~= "" and not seen[id] then
+					seen[id] = true
+					table.insert(ids, id)
+				end
+			end
+		end
+	end
+	scan(LocalPlayer:FindFirstChild("Backpack"))
+	scan(LocalPlayer.Character)
+	return ids
+end
+
+local function placeOneEgg()
+	local base = myBase()
+	local floor = base and base:FindFirstChild("Floor")
+	local character = LocalPlayer.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not floor or not floor:IsA("BasePart") or not root then
+		return
+	end
+	if (root.Position - floor.Position).Magnitude > 60 then
+		return
+	end
+
+	local frame = floor.CFrame * CFrame.new(0, floor.Size.Y / 2, 0)
+	local spots = {}
+	local eggCount = 0
+	for _, inst in CollectionService:GetTagged("Placed") do
+		if inst:IsA("BasePart") and inst:GetAttribute("OwnerUserId") == LocalPlayer.UserId then
+			if inst:GetAttribute("ItemKind") == "Egg" then
+				eggCount = eggCount + 1
+			end
+			local localPosition = frame:PointToObjectSpace(inst.Position)
+			table.insert(spots, { localPosition.X, localPosition.Z })
+		end
+	end
+	if eggCount >= 10 then
+		return
+	end
+
+	local ids = eggItemIds()
+	local itemId = ids[1]
+	if not itemId then
+		return
+	end
+
+	local remote = ReplicatedStorage:FindFirstChild("Remotes")
+	remote = remote and remote:FindFirstChild("RequestPlaceAt")
+	if not remote then
+		return
+	end
+
+	local halfX = floor.Size.X / 2 - 1.5
+	local halfZ = floor.Size.Z / 2 - 1.5
+	local x = -halfX
+	while x <= halfX do
+		local z = -halfZ
+		while z <= halfZ do
+			local snappedX = snapQuarter(x)
+			local snappedZ = snapQuarter(z)
+			local clear = true
+			for _, spot in spots do
+				local dx = snappedX - spot[1]
+				local dz = snappedZ - spot[2]
+				if dx * dx + dz * dz < 16 then
+					clear = false
+					break
+				end
+			end
+			if clear then
+				local world = (frame * CFrame.new(snappedX, 0, snappedZ)).Position
+				if (world - root.Position).Magnitude <= 60 then
+					remote:FireServer({
+						itemId = itemId,
+						x = snappedX,
+						z = snappedZ,
+						yaw = 0,
+					})
+					return
+				end
+			end
+			z = z + 4
+		end
+		x = x + 4
+	end
+end
+
+local function hatchOneEgg()
+	if typeof(fireproximityprompt) ~= "function" then
+		return
+	end
+	for _, inst in CollectionService:GetTagged("Placed") do
+		if inst:GetAttribute("OwnerUserId") == LocalPlayer.UserId
+			and inst:GetAttribute("ItemKind") == "Egg"
+			and inst:GetAttribute("State") == "Ready"
+		then
+			for _, descendant in inst:GetDescendants() do
+				if descendant:IsA("ProximityPrompt") and descendant.Name == "HatchPrompt" then
+					fireproximityprompt(descendant)
+					return
+				end
+			end
+		end
+	end
+end
+
 local function restoreRagdollHooks()
 	if typeof(hookfunction) ~= "function" then
 		table.clear(ragdollOriginals)
@@ -389,6 +535,8 @@ local function unload()
 	walkSpeedEnabled = false
 	antiRagdoll = false
 	returnOnEgg = false
+	autoPlace = false
+	autoHatch = false
 	returningHome = false
 	if carryConnection then
 		carryConnection:Disconnect()
@@ -407,7 +555,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.18"
+local VERSION = "2026-11-02.19"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -501,6 +649,26 @@ Tab:CreateToggle({
 	end,
 })
 
+Tab:CreateSection("Cafe")
+
+Tab:CreateToggle({
+	Name = "Auto Place",
+	CurrentValue = false,
+	Flag = "AutoPlace",
+	Callback = function(value)
+		autoPlace = value
+	end,
+})
+
+Tab:CreateToggle({
+	Name = "Auto Hatch",
+	CurrentValue = false,
+	Flag = "AutoHatch",
+	Callback = function(value)
+		autoHatch = value
+	end,
+})
+
 Tab:CreateSection("Coordinates")
 
 Tab:CreateButton({
@@ -572,5 +740,17 @@ task.spawn(function()
 			gameWalkSpeed = humanoid.WalkSpeed
 		end
 		task.wait(0.1)
+	end
+end)
+
+task.spawn(function()
+	while alive do
+		if autoPlace then
+			pcall(placeOneEgg)
+		end
+		if autoHatch then
+			pcall(hatchOneEgg)
+		end
+		task.wait(0.4)
 	end
 end)
