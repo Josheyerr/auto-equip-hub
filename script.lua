@@ -867,7 +867,9 @@ local function closestWaypoint(waypoints, position)
 	return closest
 end
 
-local function followPath(humanoid, root, destination, token, stopIfCarrying)
+local stealEgg
+
+local function followPath(humanoid, root, destination, token, stopIfCarrying, eggToSteal)
 	local path = PathfindingService:CreatePath({
 		AgentRadius = 2,
 		AgentHeight = 5,
@@ -944,6 +946,12 @@ local function followPath(humanoid, root, destination, token, stopIfCarrying)
 			if playerSteering() or (not stopIfCarrying and not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg"))) then
 				break
 			end
+			if stopIfCarrying and isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+				break
+			end
+			if eggToSteal and root.Parent and (root.Position - destination).Magnitude <= 12 then
+				stealEgg(eggToSteal)
+			end
 			task.wait(0.05)
 		end
 		connection:Disconnect()
@@ -962,7 +970,7 @@ local function followPath(humanoid, root, destination, token, stopIfCarrying)
 	clearPathLine()
 end
 
-local function stealEgg(egg)
+function stealEgg(egg)
 	if typeof(fireproximityprompt) ~= "function" or not egg then
 		return
 	end
@@ -1006,7 +1014,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.26"
+local VERSION = "2026-11-02.27"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -1253,15 +1261,18 @@ task.spawn(function()
 				else
 					local egg, destination = bestReachableEgg()
 					if egg and destination then
-						followPath(humanoid, root, destination, token, true)
-						if token == pathToken and autoPath and root.Parent and (root.Position - destination).Magnitude <= 14 then
-							stealEgg(egg)
+						followPath(humanoid, root, destination, token, true, egg)
+						if token == pathToken and autoPath and isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+							local home = goalCFrame()
+							if home then
+								followPath(humanoid, root, home.Position, token, false)
+							end
 						end
 					end
 				end
 			end
 		end
-		task.wait(0.4)
+		task.wait(0.05)
 	end
 end)
 
