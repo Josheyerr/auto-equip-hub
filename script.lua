@@ -28,6 +28,12 @@ local eggsBeforeReturn = 5
 local pathToken = 0
 local autoPlace = false
 local autoHatch = false
+local autoSell = false
+local nextSellAt = 0
+local sellRarities = {
+	Common = true,
+	Rare = true,
+}
 local savedCameraShake = nil
 local cameraShakeHeld = false
 local carryConnection = nil
@@ -573,6 +579,42 @@ local function setHatchCamera(enabled)
 	end
 end
 
+local function sellSelected()
+	if os.clock() < nextSellAt then
+		return
+	end
+
+	local remote = ReplicatedStorage:FindFirstChild("Remotes")
+	remote = remote and remote:FindFirstChild("RequestSell")
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	if not remote or not backpack then
+		return
+	end
+
+	local carrying = LocalPlayer:GetAttribute("CarryingEgg")
+	local itemIds = {}
+	for _, child in backpack:GetChildren() do
+		if child:IsA("Tool") then
+			local itemId = child:GetAttribute("ItemId")
+			local rarity = child:GetAttribute("Rarity")
+			if type(itemId) == "string" and itemId ~= carrying and type(rarity) == "string" and sellRarities[rarity] then
+				table.insert(itemIds, itemId)
+				if #itemIds >= 100 then
+					break
+				end
+			end
+		end
+	end
+	if #itemIds == 0 then
+		return
+	end
+
+	remote:FireServer({
+		itemIds = itemIds,
+	})
+	nextSellAt = os.clock() + 0.7
+end
+
 local function hatchOneEgg()
 	if typeof(fireproximityprompt) ~= "function" then
 		return
@@ -995,6 +1037,7 @@ local function unload()
 	pathLine:Destroy()
 	autoPlace = false
 	autoHatch = false
+	autoSell = false
 	setHatchCamera(false)
 	returningHome = false
 	if carryConnection then
@@ -1015,7 +1058,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.28"
+local VERSION = "2026-11-02.29"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -1159,6 +1202,47 @@ Tab:CreateToggle({
 	end,
 })
 
+Tab:CreateToggle({
+	Name = "Auto Sell",
+	CurrentValue = false,
+	Flag = "AutoSell",
+	Callback = function(value)
+		autoSell = value
+	end,
+})
+
+Tab:CreateDropdown({
+	Name = "Sell Rarities",
+	Options = {
+		"Common",
+		"Rare",
+		"Epic",
+		"Legendary",
+		"Mythic",
+		"Relic",
+		"Exotic",
+		"Ascendant",
+		"Secret",
+		"SuperSecret",
+		"Divine",
+	},
+	CurrentOption = { "Common", "Rare" },
+	MultipleOptions = true,
+	Flag = "SellRarities",
+	Callback = function(selected)
+		table.clear(sellRarities)
+		if type(selected) == "string" then
+			sellRarities[selected] = true
+		elseif type(selected) == "table" then
+			for _, rarity in selected do
+				if type(rarity) == "string" then
+					sellRarities[rarity] = true
+				end
+			end
+		end
+	end,
+})
+
 Tab:CreateSection("Coordinates")
 
 Tab:CreateButton({
@@ -1252,6 +1336,9 @@ task.spawn(function()
 		if autoHatch then
 			setHatchCamera(true)
 			pcall(hatchOneEgg)
+		end
+		if autoSell then
+			pcall(sellSelected)
 		end
 		task.wait(0.4)
 	end
