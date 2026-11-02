@@ -292,7 +292,12 @@ local function returnSpeed(guard)
 	local zone = (guard and guard:GetAttribute("ZoneIndex")) or LocalPlayer:GetAttribute("ZoneIndex")
 	local base = type(zone) == "number" and GUARD_SPEED[zone] or nil
 	if zone == 6 and base then
-		return base * 1.3 * 1.02
+		local measured = guard and guardChaseSpeed(guard)
+		local speed = base * 1.12
+		if measured then
+			speed = math.max(speed, measured * 1.04)
+		end
+		return math.min(speed, base * 1.2)
 	end
 	if not base then
 		return gameWalkSpeed or 18
@@ -402,7 +407,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.17"
+local VERSION = "2026-11-02.18"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
