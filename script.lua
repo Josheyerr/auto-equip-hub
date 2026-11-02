@@ -24,6 +24,7 @@ local autoPlace = false
 local autoHatch = false
 local carryConnection = nil
 local ragdollOriginals = {}
+local notifyOriginals = {}
 local ragdollStates = {
 	Enum.HumanoidStateType.Physics,
 	Enum.HumanoidStateType.Ragdoll,
@@ -517,6 +518,83 @@ local function hatchOneEgg()
 	end
 end
 
+local function isBestToast(...)
+	for index = 1, select("#", ...) do
+		local value = select(index, ...)
+		if type(value) == "string" and string.find(value, "Already your best", 1, true) then
+			return true
+		end
+		if type(value) == "table" then
+			for _, field in value do
+				if type(field) == "string" and string.find(field, "Already your best", 1, true) then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function hookBestToast(event)
+	if typeof(getconnections) ~= "function" or typeof(hookfunction) ~= "function" then
+		return
+	end
+
+	for _, connection in getconnections(event.OnClientEvent) do
+		local callback = connection.Function
+		if typeof(callback) == "function" and notifyOriginals[callback] == nil then
+			local old
+			local ok, original = pcall(function()
+				old = hookfunction(callback, function(...)
+					if autoEquip and isBestToast(...) then
+						return
+					end
+					return old(...)
+				end)
+				return old
+			end)
+			if ok and typeof(original) == "function" then
+				notifyOriginals[callback] = original
+			end
+		end
+	end
+end
+
+local function hideBestBanners()
+	if not autoEquip then
+		return
+	end
+
+	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	if not playerGui then
+		return
+	end
+
+	for _, descendant in playerGui:GetDescendants() do
+		if (descendant:IsA("TextLabel") or descendant:IsA("TextButton"))
+			and string.find(descendant.Text, "Already your best", 1, true)
+		then
+			descendant.Visible = false
+			local parent = descendant.Parent
+			if parent and parent:IsA("GuiObject") then
+				parent.Visible = false
+			end
+		end
+	end
+end
+
+local function restoreNotifyHooks()
+	if typeof(hookfunction) ~= "function" then
+		table.clear(notifyOriginals)
+		return
+	end
+
+	for callback, original in notifyOriginals do
+		pcall(hookfunction, callback, original)
+	end
+	table.clear(notifyOriginals)
+end
+
 local function restoreRagdollHooks()
 	if typeof(hookfunction) ~= "function" then
 		table.clear(ragdollOriginals)
@@ -545,6 +623,7 @@ local function unload()
 	pcall(resetWalkSpeed)
 	pcall(restoreRagdollStates)
 	pcall(restoreRagdollHooks)
+	pcall(restoreNotifyHooks)
 	getgenv().AutoEquipHub = nil
 	pcall(function()
 		Rayfield:Destroy()
@@ -555,7 +634,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.19"
+local VERSION = "2026-11-02.20"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -698,6 +777,17 @@ task.spawn(function()
 			end)
 		end
 		task.wait(interval)
+	end
+end)
+
+task.spawn(function()
+	local event = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Notify")
+	while alive do
+		pcall(hookBestToast, event)
+		if autoEquip then
+			pcall(hideBestBanners)
+		end
+		task.wait(0.2)
 	end
 end)
 
