@@ -4,6 +4,7 @@ end
 
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -17,6 +18,8 @@ local walkSpeedEnabled = false
 local walkSpeed = 16
 local defaultWalkSpeed = 16
 local antiRagdoll = false
+local returnOnEgg = false
+local carryConnection = nil
 local ragdollOriginals = {}
 local ragdollStates = {
 	Enum.HumanoidStateType.Physics,
@@ -125,6 +128,86 @@ local function hookRagdoll(event)
 	end
 end
 
+local function isCarryingEgg(value)
+	return type(value) == "string" and value ~= ""
+end
+
+local function findMyBase()
+	local slot = LocalPlayer:GetAttribute("PlotSlot")
+	local userId = LocalPlayer.UserId
+	local slotted = nil
+
+	for _, inst in CollectionService:GetTagged("Base") do
+		if inst:IsA("Model") then
+			if inst:GetAttribute("OwnerUserId") == userId then
+				return inst
+			end
+			if type(slot) == "number" and inst:GetAttribute("BaseIndex") == slot then
+				slotted = inst
+			end
+		end
+	end
+
+	if slotted then
+		return slotted
+	end
+
+	local bases = workspace:FindFirstChild("Bases")
+	if bases and type(slot) == "number" then
+		local named = bases:FindFirstChild("Base" .. tostring(slot))
+		if named and named:IsA("Model") then
+			return named
+		end
+	end
+
+	return nil
+end
+
+local function baseReturnCFrame(base)
+	local spot = base:FindFirstChild("ReturnSpot", true)
+	if spot and spot:IsA("Attachment") then
+		return spot.WorldCFrame + Vector3.new(0, 3, 0)
+	end
+	if spot and spot:IsA("BasePart") then
+		return spot.CFrame + Vector3.new(0, 3, 0)
+	end
+
+	local spawn = base:FindFirstChild("Spawn", true)
+	if spawn and spawn:IsA("BasePart") then
+		return spawn.CFrame + Vector3.new(0, 4, 0)
+	end
+
+	return base:GetPivot() + Vector3.new(0, 5, 0)
+end
+
+local function teleportToBase()
+	local character = LocalPlayer.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not character or not root then
+		return
+	end
+
+	local base = findMyBase()
+	if not base then
+		Rayfield:Notify({
+			Title = "Egg Return",
+			Content = "Could not find your base.",
+			Duration = 3,
+		})
+		return
+	end
+
+	character:PivotTo(baseReturnCFrame(base))
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.PlatformStand = false
+		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+	end
+end
+
 local function restoreRagdollHooks()
 	if typeof(hookfunction) ~= "function" then
 		table.clear(ragdollOriginals)
@@ -142,6 +225,11 @@ local function unload()
 	autoEquip = false
 	walkSpeedEnabled = false
 	antiRagdoll = false
+	returnOnEgg = false
+	if carryConnection then
+		carryConnection:Disconnect()
+		carryConnection = nil
+	end
 	pcall(resetWalkSpeed)
 	pcall(restoreRagdollStates)
 	pcall(restoreRagdollHooks)
@@ -236,6 +324,17 @@ Tab:CreateToggle({
 	end,
 })
 
+Tab:CreateSection("Egg")
+
+Tab:CreateToggle({
+	Name = "Teleport Home On Egg",
+	CurrentValue = false,
+	Flag = "ReturnOnEgg",
+	Callback = function(value)
+		returnOnEgg = value
+	end,
+})
+
 Tab:CreateSection("Coordinates")
 
 Tab:CreateButton({
@@ -278,6 +377,22 @@ task.spawn(function()
 		task.wait(0.1)
 	end
 end)
+
+do
+	local lastCarry = LocalPlayer:GetAttribute("CarryingEgg")
+	carryConnection = LocalPlayer:GetAttributeChangedSignal("CarryingEgg"):Connect(function()
+		if not alive then
+			return
+		end
+
+		local value = LocalPlayer:GetAttribute("CarryingEgg")
+		local pickedUp = returnOnEgg and isCarryingEgg(value) and not isCarryingEgg(lastCarry)
+		lastCarry = value
+		if pickedUp then
+			teleportToBase()
+		end
+	end)
+end
 
 task.spawn(function()
 	while alive do
