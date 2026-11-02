@@ -728,6 +728,7 @@ local function bestReachableEgg()
 	local bestRank = -1
 	local bestDistance = math.huge
 	local bestPosition = nil
+	local bestInstance = nil
 	for _, inst in CollectionService:GetTagged("WorldEgg") do
 		local carriedBy = inst:GetAttribute("CarriedBy")
 		if type(carriedBy) == "number" and carriedBy ~= 0 then
@@ -755,13 +756,54 @@ local function bestReachableEgg()
 			bestRank = rank
 			bestDistance = distance
 			bestPosition = position
+			bestInstance = inst
 		end
 	end
 
-	return bestPosition
+	return bestInstance, bestPosition
 end
 
-local function followPath(humanoid, root, destination, token)
+local pathLine = Instance.new("Folder")
+pathLine.Name = "AutoPathLine"
+pathLine.Parent = workspace
+
+local function clearPathLine()
+	pathLine:ClearAllChildren()
+end
+
+local function drawPathLine(points)
+	clearPathLine()
+	local previousAttachment = nil
+	for _, position in points do
+		local part = Instance.new("Part")
+		part.Name = "PathNode"
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+		part.Transparency = 1
+		part.Size = Vector3.new(0.2, 0.2, 0.2)
+		part.Position = position + Vector3.new(0, 1.5, 0)
+		part.Parent = pathLine
+
+		local attachment = Instance.new("Attachment")
+		attachment.Parent = part
+		if previousAttachment then
+			local beam = Instance.new("Beam")
+			beam.Attachment0 = previousAttachment
+			beam.Attachment1 = attachment
+			beam.Width0 = 0.4
+			beam.Width1 = 0.4
+			beam.Color = ColorSequence.new(Color3.fromRGB(255, 196, 60))
+			beam.FaceCamera = true
+			beam.LightEmission = 1
+			beam.Parent = previousAttachment.Parent
+		end
+		previousAttachment = attachment
+	end
+end
+
+local function followPath(humanoid, root, destination, token, stopIfCarrying)
 	local path = PathfindingService:CreatePath({
 		AgentRadius = 2,
 		AgentHeight = 5,
@@ -772,15 +814,24 @@ local function followPath(humanoid, root, destination, token)
 		path:ComputeAsync(root.Position, destination)
 	end)
 	if not computed or path.Status ~= Enum.PathStatus.Success then
+		drawPathLine({ root.Position, destination })
 		humanoid:MoveTo(destination)
 		return
 	end
 
+	local points = { root.Position }
+	for _, waypoint in path:GetWaypoints() do
+		table.insert(points, waypoint.Position)
+	end
+	drawPathLine(points)
+
 	for _, waypoint in path:GetWaypoints() do
 		if token ~= pathToken or not autoPath or not alive then
+			clearPathLine()
 			return
 		end
-		if isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+		if stopIfCarrying and isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+			clearPathLine()
 			return
 		end
 		if waypoint.Action == Enum.PathWaypointAction.Jump then
@@ -795,11 +846,25 @@ local function followPath(humanoid, root, destination, token)
 		while not arrived and os.clock() - started < 4 do
 			if token ~= pathToken or not autoPath or not alive then
 				connection:Disconnect()
+				clearPathLine()
 				return
 			end
 			task.wait(0.1)
 		end
 		connection:Disconnect()
+	end
+	clearPathLine()
+end
+
+local function stealEgg(egg)
+	if typeof(fireproximityprompt) ~= "function" or not egg then
+		return
+	end
+	for _, descendant in egg:GetDescendants() do
+		if descendant:IsA("ProximityPrompt") and descendant.Name == "StealPrompt" then
+			fireproximityprompt(descendant)
+			return
+		end
 	end
 end
 
@@ -811,6 +876,8 @@ local function unload()
 	returnOnEgg = false
 	autoPath = false
 	pathToken = pathToken + 1
+	clearPathLine()
+	pathLine:Destroy()
 	autoPlace = false
 	autoHatch = false
 	setHatchCamera(false)
@@ -833,7 +900,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.24"
+local VERSION = "2026-11-02.25"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -936,6 +1003,9 @@ Tab:CreateToggle({
 	Callback = function(value)
 		autoPath = value
 		pathToken = pathToken + 1
+		if not value then
+			clearPathLine()
+		end
 	end,
 })
 
@@ -1036,7 +1106,7 @@ task.spawn(function()
 	while alive do
 		local character = LocalPlayer.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-		if humanoid and walkSpeedEnabled and not returningHome then
+		if humanoid and walkSpeedEnabled and not returningHome and not autoPath then
 			if humanoid.WalkSpeed ~= walkSpeed then
 				humanoid.WalkSpeed = walkSpeed
 			end
@@ -1063,13 +1133,26 @@ end)
 task.spawn(function()
 	while alive do
 		if autoPath then
-			local destination = bestReachableEgg()
 			local character = LocalPlayer.Character
 			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 			local root = character and character:FindFirstChild("HumanoidRootPart")
-			if destination and humanoid and root then
+			if humanoid and root then
 				pathToken = pathToken + 1
-				followPath(humanoid, root, destination, pathToken)
+				local token = pathToken
+				if isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+					local home = goalCFrame()
+					if home and (root.Position - home.Position).Magnitude > 8 then
+						followPath(humanoid, root, home.Position, token, false)
+					end
+				else
+					local egg, destination = bestReachableEgg()
+					if egg and destination then
+						followPath(humanoid, root, destination, token, true)
+						if token == pathToken and autoPath and root.Parent and (root.Position - destination).Magnitude <= 14 then
+							stealEgg(egg)
+						end
+					end
+				end
 			end
 		end
 		task.wait(0.4)
