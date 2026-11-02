@@ -237,9 +237,14 @@ local function teleportToBase()
 		LocalPlayer.ReplicationFocus = nil
 	end
 	root.Anchored = false
+	local leftover = workspace:FindFirstChild("EggReturnFocus")
+	if leftover then
+		leftover:Destroy()
+	end
 
 	task.spawn(function()
 		local target = goal.Position
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		while alive and root.Parent and (root.Position - target).Magnitude > 6 do
 			if not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
 				break
@@ -250,26 +255,13 @@ local function teleportToBase()
 				gameSpeed = 16
 			end
 
-			local dt = task.wait()
-			if dt > 0.1 then
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-				continue
-			end
-
-			local offset = target - root.Position
-			local step = math.min(gameSpeed * 0.9 * dt, offset.Magnitude)
-			character:PivotTo(CFrame.new(root.Position + offset.Unit * step) * goal.Rotation)
-			root.AssemblyLinearVelocity = Vector3.zero
-			root.AssemblyAngularVelocity = Vector3.zero
-		end
-
-		if alive and root.Parent and isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
-			local humanoid = character:FindFirstChildOfClass("Humanoid")
-			if humanoid then
+			if humanoid and humanoid.Parent then
 				humanoid.PlatformStand = false
-				humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+				humanoid.WalkSpeed = gameSpeed
+				humanoid:MoveTo(target)
 			end
+
+			task.wait(0.1)
 		end
 
 		returningHome = false
@@ -312,7 +304,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.11"
+local VERSION = "2026-11-02.12"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
