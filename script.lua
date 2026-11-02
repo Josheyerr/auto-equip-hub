@@ -764,6 +764,21 @@ local RARITY_RANK = {
 	Exclusive = 12,
 }
 
+local pathRarities = {
+	Common = true,
+	Rare = true,
+	Epic = true,
+	Legendary = true,
+	Mythic = true,
+	Relic = true,
+	Exotic = true,
+	Ascendant = true,
+	Secret = true,
+	SuperSecret = true,
+	Divine = true,
+	Exclusive = true,
+}
+
 local function worldEggPosition(inst)
 	if inst:IsA("Model") then
 		local part = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
@@ -806,7 +821,10 @@ local function bestReachableEgg()
 		end
 
 		local rarity = inst:GetAttribute("Rarity")
-		local rank = type(rarity) == "string" and RARITY_RANK[rarity] or 0
+		if type(rarity) ~= "string" or not pathRarities[rarity] then
+			continue
+		end
+		local rank = RARITY_RANK[rarity] or 0
 		local position = worldEggPosition(inst)
 		if not position then
 			continue
@@ -1076,7 +1094,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.30"
+local VERSION = "2026-11-02.31"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -1194,6 +1212,52 @@ Tab:CreateSlider({
 	Flag = "EggsBeforeReturn",
 	Callback = function(value)
 		eggsBeforeReturn = value
+	end,
+})
+
+Tab:CreateDropdown({
+	Name = "Path Rarities",
+	Options = {
+		"Common",
+		"Rare",
+		"Epic",
+		"Legendary",
+		"Mythic",
+		"Relic",
+		"Exotic",
+		"Ascendant",
+		"Secret",
+		"SuperSecret",
+		"Divine",
+		"Exclusive",
+	},
+	CurrentOption = {
+		"Common",
+		"Rare",
+		"Epic",
+		"Legendary",
+		"Mythic",
+		"Relic",
+		"Exotic",
+		"Ascendant",
+		"Secret",
+		"SuperSecret",
+		"Divine",
+		"Exclusive",
+	},
+	MultipleOptions = true,
+	Flag = "PathRarities",
+	Callback = function(selected)
+		table.clear(pathRarities)
+		if type(selected) == "string" then
+			pathRarities[selected] = true
+		elseif type(selected) == "table" then
+			for _, rarity in selected do
+				if type(rarity) == "string" then
+					pathRarities[rarity] = true
+				end
+			end
+		end
 	end,
 })
 
