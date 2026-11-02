@@ -132,36 +132,19 @@ local function isCarryingEgg(value)
 	return type(value) == "string" and value ~= ""
 end
 
-local function findMyBase()
-	local slot = LocalPlayer:GetAttribute("PlotSlot")
-	local userId = LocalPlayer.UserId
-	local slotted = nil
+local BASE_FALLBACK = {
+	[1] = CFrame.new(-282, 6, 250),
+	[2] = CFrame.new(-282, 6, 310),
+	[3] = CFrame.new(-282, 6, 370),
+	[4] = CFrame.new(-282, 6, 430),
+	[5] = CFrame.new(-282, 6, 490),
+	[6] = CFrame.new(-282, 6, 550),
+	[7] = CFrame.new(-240, 6, 238),
+	[8] = CFrame.new(-240, 6, 562),
+}
 
-	for _, inst in CollectionService:GetTagged("Base") do
-		if inst:IsA("Model") then
-			if inst:GetAttribute("OwnerUserId") == userId then
-				return inst
-			end
-			if type(slot) == "number" and inst:GetAttribute("BaseIndex") == slot then
-				slotted = inst
-			end
-		end
-	end
-
-	if slotted then
-		return slotted
-	end
-
-	local bases = workspace:FindFirstChild("Bases")
-	if bases and type(slot) == "number" then
-		local named = bases:FindFirstChild("Base" .. tostring(slot))
-		if named and named:IsA("Model") then
-			return named
-		end
-	end
-
-	return nil
-end
+local savedBaseCFrames = {}
+local returningHome = false
 
 local function baseReturnCFrame(base)
 	local spot = base:FindFirstChild("ReturnSpot", true)
@@ -180,15 +163,67 @@ local function baseReturnCFrame(base)
 	return base:GetPivot() + Vector3.new(0, 5, 0)
 end
 
+local function rememberBase(base)
+	if not base:IsA("Model") then
+		return
+	end
+
+	local cf = baseReturnCFrame(base)
+	local index = base:GetAttribute("BaseIndex")
+	if type(index) == "number" then
+		savedBaseCFrames[index] = cf
+	end
+	if base:GetAttribute("OwnerUserId") == LocalPlayer.UserId then
+		savedBaseCFrames.mine = cf
+	end
+end
+
+local function refreshSavedBases()
+	for _, inst in CollectionService:GetTagged("Base") do
+		rememberBase(inst)
+	end
+
+	local bases = workspace:FindFirstChild("Bases")
+	if not bases then
+		return
+	end
+
+	for _, child in bases:GetChildren() do
+		local index = tonumber(string.match(child.Name, "^Base(%d+)$"))
+		if index and child:IsA("Model") then
+			savedBaseCFrames[index] = savedBaseCFrames[index] or baseReturnCFrame(child)
+			rememberBase(child)
+		end
+	end
+end
+
+local function goalCFrame()
+	refreshSavedBases()
+	if savedBaseCFrames.mine then
+		return savedBaseCFrames.mine
+	end
+
+	local slot = LocalPlayer:GetAttribute("PlotSlot")
+	if type(slot) == "number" then
+		return savedBaseCFrames[slot] or BASE_FALLBACK[slot]
+	end
+
+	return nil
+end
+
 local function teleportToBase()
+	if returningHome then
+		return
+	end
+
 	local character = LocalPlayer.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not character or not root then
 		return
 	end
 
-	local base = findMyBase()
-	if not base then
+	local goal = goalCFrame()
+	if not goal then
 		Rayfield:Notify({
 			Title = "Egg Return",
 			Content = "Could not find your base.",
@@ -197,15 +232,35 @@ local function teleportToBase()
 		return
 	end
 
-	character:PivotTo(baseReturnCFrame(base))
-	root.AssemblyLinearVelocity = Vector3.zero
-	root.AssemblyAngularVelocity = Vector3.zero
+	returningHome = true
+	task.spawn(function()
+		local target = goal.Position
+		while alive and root.Parent and (root.Position - target).Magnitude > 6 do
+			if not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+				break
+			end
 
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.PlatformStand = false
-		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-	end
+			local offset = target - root.Position
+			local step = math.min(18, offset.Magnitude)
+			character:PivotTo(CFrame.new(root.Position + offset.Unit * step) * goal.Rotation)
+			root.AssemblyLinearVelocity = Vector3.zero
+			root.AssemblyAngularVelocity = Vector3.zero
+			task.wait()
+		end
+
+		if alive and root.Parent and isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+			character:PivotTo(goal)
+			root.AssemblyLinearVelocity = Vector3.zero
+			root.AssemblyAngularVelocity = Vector3.zero
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.PlatformStand = false
+				humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+			end
+		end
+
+		returningHome = false
+	end)
 end
 
 local function restoreRagdollHooks()
@@ -226,6 +281,7 @@ local function unload()
 	walkSpeedEnabled = false
 	antiRagdoll = false
 	returnOnEgg = false
+	returningHome = false
 	if carryConnection then
 		carryConnection:Disconnect()
 		carryConnection = nil
@@ -243,7 +299,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.6"
+local VERSION = "2026-11-02.7"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
