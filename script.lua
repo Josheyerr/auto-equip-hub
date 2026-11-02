@@ -1044,7 +1044,7 @@ local function followPath(humanoid, root, destination, token, stopIfCarrying, eg
 			if stopIfCarrying and (isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) or #eggItemIds() >= eggsBeforeReturn) then
 				break
 			end
-			if eggToSteal and root.Parent and (root.Position - destination).Magnitude <= 12 then
+			if eggToSteal and root.Parent and (root.Position - destination).Magnitude <= 45 then
 				stealEgg(eggToSteal)
 			end
 			task.wait(0.05)
@@ -1084,6 +1084,8 @@ function stealEgg(egg)
 	end
 	for _, descendant in egg:GetDescendants() do
 		if descendant:IsA("ProximityPrompt") and descendant.Name == "StealPrompt" then
+			descendant.MaxActivationDistance = 50
+			descendant.RequiresLineOfSight = false
 			fireproximityprompt(descendant)
 			return
 		end
@@ -1124,7 +1126,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.32"
+local VERSION = "2026-11-02.33"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
