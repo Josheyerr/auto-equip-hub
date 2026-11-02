@@ -240,12 +240,17 @@ local function teleportToBase()
 				break
 			end
 
+			local gameSpeed = tonumber(LocalPlayer:GetAttribute("Speed"))
+			if not gameSpeed or gameSpeed ~= gameSpeed or gameSpeed <= 0 then
+				gameSpeed = 16
+			end
+
+			local dt = task.wait()
 			local offset = target - root.Position
-			local step = math.min(18, offset.Magnitude)
+			local step = math.min(gameSpeed * 0.92 * dt, offset.Magnitude)
 			character:PivotTo(CFrame.new(root.Position + offset.Unit * step) * goal.Rotation)
 			root.AssemblyLinearVelocity = Vector3.zero
 			root.AssemblyAngularVelocity = Vector3.zero
-			task.wait()
 		end
 
 		if alive and root.Parent and isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
@@ -299,7 +304,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.7"
+local VERSION = "2026-11-02.8"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -454,7 +459,7 @@ end
 
 task.spawn(function()
 	while alive do
-		if walkSpeedEnabled then
+		if walkSpeedEnabled and not returningHome then
 			local character = LocalPlayer.Character
 			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 			if humanoid and humanoid.WalkSpeed ~= walkSpeed then
