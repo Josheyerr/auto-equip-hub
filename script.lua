@@ -24,9 +24,6 @@ local acceptWalkToggle = false
 local antiRagdoll = false
 local returnOnEgg = false
 local autoPath = false
-local pickupReachEnabled = false
-local pickupReach = 50
-local promptDistances = setmetatable({}, { __mode = "k" })
 local eggsBeforeReturn = 5
 local pathToken = 0
 local autoPlace = false
@@ -1047,8 +1044,7 @@ local function followPath(humanoid, root, destination, token, stopIfCarrying, eg
 			if stopIfCarrying and (isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) or #eggItemIds() >= eggsBeforeReturn) then
 				break
 			end
-			local stealDistance = pickupReachEnabled and pickupReach or 12
-			if eggToSteal and root.Parent and (root.Position - destination).Magnitude <= stealDistance then
+			if eggToSteal and root.Parent and (root.Position - destination).Magnitude <= 12 then
 				stealEgg(eggToSteal)
 			end
 			task.wait(0.05)
@@ -1082,37 +1078,12 @@ local function followPath(humanoid, root, destination, token, stopIfCarrying, eg
 	clearPathLine()
 end
 
-local function applyPickupReach()
-	for _, inst in CollectionService:GetTagged("WorldEgg") do
-		for _, descendant in inst:GetDescendants() do
-			if descendant:IsA("ProximityPrompt") and descendant.Name == "StealPrompt" then
-				if promptDistances[descendant] == nil then
-					promptDistances[descendant] = descendant.MaxActivationDistance
-				end
-				if pickupReachEnabled then
-					descendant.MaxActivationDistance = pickupReach
-					descendant.RequiresLineOfSight = false
-				else
-					descendant.MaxActivationDistance = promptDistances[descendant]
-				end
-			end
-		end
-	end
-end
-
 function stealEgg(egg)
 	if typeof(fireproximityprompt) ~= "function" or not egg then
 		return
 	end
 	for _, descendant in egg:GetDescendants() do
 		if descendant:IsA("ProximityPrompt") and descendant.Name == "StealPrompt" then
-			if pickupReachEnabled then
-				if promptDistances[descendant] == nil then
-					promptDistances[descendant] = descendant.MaxActivationDistance
-				end
-				descendant.MaxActivationDistance = pickupReach
-				descendant.RequiresLineOfSight = false
-			end
 			fireproximityprompt(descendant)
 			return
 		end
@@ -1126,8 +1097,6 @@ local function unload()
 	antiRagdoll = false
 	returnOnEgg = false
 	autoPath = false
-	pickupReachEnabled = false
-	applyPickupReach()
 	pathToken = pathToken + 1
 	clearPathLine()
 	pathLine:Destroy()
@@ -1155,7 +1124,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.34"
+local VERSION = "2026-11-02.35"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -1245,33 +1214,6 @@ Tab:CreateToggle({
 			applyAntiRagdoll()
 		else
 			restoreRagdollStates()
-		end
-	end,
-})
-
-Tab:CreateSection("Pickup Reach")
-
-Tab:CreateToggle({
-	Name = "Pickup Reach",
-	CurrentValue = false,
-	Flag = "PickupReach",
-	Callback = function(value)
-		pickupReachEnabled = value
-		applyPickupReach()
-	end,
-})
-
-Tab:CreateSlider({
-	Name = "Reach Distance",
-	Range = {10, 150},
-	Increment = 1,
-	Suffix = " studs",
-	CurrentValue = 50,
-	Flag = "PickupReachDistance",
-	Callback = function(value)
-		pickupReach = value
-		if pickupReachEnabled then
-			applyPickupReach()
 		end
 	end,
 })
@@ -1521,9 +1463,6 @@ task.spawn(function()
 		end
 		if autoClaimIndex then
 			pcall(claimIndex)
-		end
-		if pickupReachEnabled then
-			pcall(applyPickupReach)
 		end
 		task.wait(0.4)
 	end
