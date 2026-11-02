@@ -7,6 +7,7 @@ local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local CollectionService = game:GetService("CollectionService")
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
@@ -803,55 +804,160 @@ local function drawPathLine(points)
 	end
 end
 
+local SPEED_KNOTS = {
+	{ 10, 18 },
+	{ 550, 25 },
+	{ 2500, 55 },
+	{ 25000, 70 },
+	{ 250000, 100 },
+	{ 2500000, 135 },
+	{ 25000000, 170 },
+	{ 100000000, 195 },
+	{ 1000000000, 197 },
+	{ 10000000000, 199 },
+	{ 1000000000000, 200 },
+}
+
+local function gameMoveSpeed()
+	local stat = math.max(tonumber(LocalPlayer:GetAttribute("Speed")) or 10, 1)
+	local first = SPEED_KNOTS[1]
+	local last = SPEED_KNOTS[#SPEED_KNOTS]
+	local walk = last[2]
+	if stat <= first[1] then
+		walk = first[2]
+	elseif stat < last[1] then
+		for index = 1, #SPEED_KNOTS - 1 do
+			local left = SPEED_KNOTS[index]
+			local right = SPEED_KNOTS[index + 1]
+			if stat <= right[1] then
+				local blend = (math.log10(stat) - math.log10(left[1])) / (math.log10(right[1]) - math.log10(left[1]))
+				walk = left[2] + (right[2] - left[2]) * blend
+				break
+			end
+		end
+	end
+	if isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+		walk = walk * 0.9
+	end
+	return walk
+end
+
+local function playerSteering()
+	return UserInputService:IsKeyDown(Enum.KeyCode.W)
+		or UserInputService:IsKeyDown(Enum.KeyCode.A)
+		or UserInputService:IsKeyDown(Enum.KeyCode.S)
+		or UserInputService:IsKeyDown(Enum.KeyCode.D)
+		or UserInputService:IsKeyDown(Enum.KeyCode.Space)
+		or UserInputService:IsKeyDown(Enum.KeyCode.Up)
+		or UserInputService:IsKeyDown(Enum.KeyCode.Down)
+		or UserInputService:IsKeyDown(Enum.KeyCode.Left)
+		or UserInputService:IsKeyDown(Enum.KeyCode.Right)
+end
+
+local function closestWaypoint(waypoints, position)
+	local closest = 1
+	local closestDistance = math.huge
+	for index, waypoint in waypoints do
+		local distance = (waypoint.Position - position).Magnitude
+		if distance < closestDistance then
+			closestDistance = distance
+			closest = index
+		end
+	end
+	return closest
+end
+
 local function followPath(humanoid, root, destination, token, stopIfCarrying)
 	local path = PathfindingService:CreatePath({
 		AgentRadius = 2,
 		AgentHeight = 5,
 		AgentCanJump = true,
-		WaypointSpacing = 4,
+		WaypointSpacing = 12,
 	})
 	local computed = pcall(function()
 		path:ComputeAsync(root.Position, destination)
 	end)
-	if not computed or path.Status ~= Enum.PathStatus.Success then
-		drawPathLine({ root.Position, destination })
-		humanoid:MoveTo(destination)
-		return
+	local waypoints = {}
+	if computed and path.Status == Enum.PathStatus.Success then
+		waypoints = path:GetWaypoints()
+	else
+		table.insert(waypoints, {
+			Position = destination,
+			Action = Enum.PathWaypointAction.Walk,
+		})
 	end
 
 	local points = { root.Position }
-	for _, waypoint in path:GetWaypoints() do
+	for _, waypoint in waypoints do
 		table.insert(points, waypoint.Position)
 	end
 	drawPathLine(points)
 
-	for _, waypoint in path:GetWaypoints() do
-		if token ~= pathToken or not autoPath or not alive then
+	local index = closestWaypoint(waypoints, root.Position)
+	while index <= #waypoints do
+		if token ~= pathToken or not autoPath or not alive or not root.Parent then
 			clearPathLine()
 			return
 		end
-		if stopIfCarrying and isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
+
+		local carrying = isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg"))
+		if stopIfCarrying and carrying then
 			clearPathLine()
 			return
 		end
+		if not stopIfCarrying and not carrying then
+			clearPathLine()
+			return
+		end
+		if playerSteering() then
+			while playerSteering() and token == pathToken and autoPath and alive do
+				task.wait(0.05)
+			end
+			index = closestWaypoint(waypoints, root.Position)
+			continue
+		end
+
+		local moveSpeed = gameMoveSpeed()
+		if humanoid.WalkSpeed ~= moveSpeed then
+			humanoid.WalkSpeed = moveSpeed
+		end
+
+		local waypoint = waypoints[index]
 		if waypoint.Action == Enum.PathWaypointAction.Jump then
 			humanoid.Jump = true
 		end
 		humanoid:MoveTo(waypoint.Position)
+
 		local arrived = false
-		local connection = humanoid.MoveToFinished:Connect(function()
+		local reached = false
+		local connection = humanoid.MoveToFinished:Connect(function(didReach)
 			arrived = true
+			reached = didReach
 		end)
 		local started = os.clock()
-		while not arrived and os.clock() - started < 4 do
+		while not arrived and os.clock() - started < 3 do
 			if token ~= pathToken or not autoPath or not alive then
 				connection:Disconnect()
 				clearPathLine()
 				return
 			end
-			task.wait(0.1)
+			if playerSteering() or (not stopIfCarrying and not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg"))) then
+				break
+			end
+			task.wait(0.05)
 		end
 		connection:Disconnect()
+
+		if playerSteering() or not reached then
+			local nearest = closestWaypoint(waypoints, root.Position)
+			if nearest == index and not playerSteering() then
+				index = index + 1
+			else
+				index = nearest
+			end
+		else
+			index = index + 1
+		end
 	end
 	clearPathLine()
 end
@@ -900,7 +1006,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.25"
+local VERSION = "2026-11-02.26"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -1106,7 +1212,7 @@ task.spawn(function()
 	while alive do
 		local character = LocalPlayer.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-		if humanoid and walkSpeedEnabled and not returningHome and not autoPath then
+		if humanoid and walkSpeedEnabled and not returningHome then
 			if humanoid.WalkSpeed ~= walkSpeed then
 				humanoid.WalkSpeed = walkSpeed
 			end
