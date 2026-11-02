@@ -598,35 +598,33 @@ local function setHatchCamera(enabled)
 end
 
 local BAT_REACH = 11
-local BAT_ARC = 200
 
-local function inBatRange(root, targetPosition)
-	local offset = targetPosition - root.Position
-	local flat = Vector3.new(offset.X, 0, offset.Z)
-	if flat.Magnitude > BAT_REACH or flat.Magnitude < 0.5 then
-		return false
-	end
-
-	local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
-	if look.Magnitude < 0.1 then
-		return true
-	end
-
-	local angle = math.deg(math.acos(math.clamp(look.Unit:Dot(flat.Unit), -1, 1)))
-	return angle <= BAT_ARC / 2
-end
-
-local function targetInBatRange(root)
+local function nearestBatTarget(root)
+	local nearest = nil
+	local nearestDistance = BAT_REACH
 	for _, player in Players:GetPlayers() do
 		if player ~= LocalPlayer and player.Character then
 			local otherRoot = player.Character:FindFirstChild("HumanoidRootPart")
 			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-			if otherRoot and humanoid and humanoid.Health > 0 and inBatRange(root, otherRoot.Position) then
-				return true
+			if otherRoot and humanoid and humanoid.Health > 0 then
+				local offset = otherRoot.Position - root.Position
+				local flatDistance = Vector3.new(offset.X, 0, offset.Z).Magnitude
+				if math.abs(offset.Y) <= 6 and flatDistance >= 0.5 and flatDistance <= nearestDistance then
+					nearest = otherRoot
+					nearestDistance = flatDistance
+				end
 			end
 		end
 	end
-	return false
+	return nearest
+end
+
+local function faceTarget(root, target)
+	local flat = Vector3.new(target.Position.X - root.Position.X, 0, target.Position.Z - root.Position.Z)
+	if flat.Magnitude < 0.05 then
+		return
+	end
+	root.CFrame = CFrame.lookAt(root.Position, Vector3.new(target.Position.X, root.Position.Y, target.Position.Z))
 end
 
 local function swingBat()
@@ -636,9 +634,16 @@ local function swingBat()
 
 	local character = LocalPlayer.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not character or not root or not targetInBatRange(root) then
+	if not character or not root then
 		return
 	end
+
+	local target = nearestBatTarget(root)
+	if not target then
+		return
+	end
+
+	faceTarget(root, target)
 
 	local bat = character:FindFirstChild("Bat")
 	if not bat then
@@ -647,6 +652,14 @@ local function swingBat()
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if bat and humanoid then
 			humanoid:EquipTool(bat)
+			task.defer(function()
+				local stillThere = nearestBatTarget(root)
+				if bat.Parent == character and stillThere then
+					faceTarget(root, stillThere)
+					bat:Activate()
+					nextBatSwing = os.clock() + 0.65
+				end
+			end)
 		end
 		return
 	end
@@ -1187,7 +1200,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.36"
+local VERSION = "2026-11-02.37"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
