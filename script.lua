@@ -398,8 +398,25 @@ local function myBase()
 	return nil
 end
 
-local function snapQuarter(value)
-	return math.floor(value / 0.25 + 0.5) * 0.25
+local pendingPlaces = {}
+local placementApi = nil
+
+local function getPlacement()
+	if placementApi ~= nil then
+		return placementApi or nil
+	end
+
+	local shared = ReplicatedStorage:FindFirstChild("Shared")
+	local util = shared and shared:FindFirstChild("Util")
+	local moduleScript = util and util:FindFirstChild("Placement")
+	if not moduleScript then
+		placementApi = false
+		return nil
+	end
+
+	local ok, result = pcall(require, moduleScript)
+	placementApi = ok and result or false
+	return placementApi or nil
 end
 
 local function eggItemIds()
@@ -425,28 +442,55 @@ local function eggItemIds()
 end
 
 local function placeOneEgg()
+	local placement = getPlacement()
 	local base = myBase()
 	local floor = base and base:FindFirstChild("Floor")
 	local character = LocalPlayer.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not floor or not floor:IsA("BasePart") or not root then
+	if not placement or not floor or not floor:IsA("BasePart") or not root then
 		return
 	end
 	if (root.Position - floor.Position).Magnitude > 60 then
 		return
 	end
 
-	local frame = floor.CFrame * CFrame.new(0, floor.Size.Y / 2, 0)
-	local spots = {}
+	local area = placement.Decode(base:GetAttribute("PlacementArea"))
+	if not area then
+		return
+	end
+
+	local frame = placement.BaseFrame(floor)
+	local occupied = {}
 	local eggCount = 0
+	local now = os.clock()
+	for index = #pendingPlaces, 1, -1 do
+		if now - pendingPlaces[index].time > 3 then
+			table.remove(pendingPlaces, index)
+		end
+	end
+
 	for _, inst in CollectionService:GetTagged("Placed") do
-		if inst:IsA("BasePart") and inst:GetAttribute("OwnerUserId") == LocalPlayer.UserId then
-			if inst:GetAttribute("ItemKind") == "Egg" then
+		if inst:IsA("BasePart") then
+			local localX, localZ = placement.ToLocal(frame, inst.Position)
+			local radius = inst:GetAttribute("Radius")
+			table.insert(occupied, {
+				X = localX,
+				Z = localZ,
+				R = type(radius) == "number" and radius or 1.75,
+				Id = inst:GetAttribute("ItemId"),
+			})
+			if inst:GetAttribute("OwnerUserId") == LocalPlayer.UserId and inst:GetAttribute("ItemKind") == "Egg" then
 				eggCount = eggCount + 1
 			end
-			local localPosition = frame:PointToObjectSpace(inst.Position)
-			table.insert(spots, { localPosition.X, localPosition.Z })
 		end
+	end
+	for _, pending in pendingPlaces do
+		table.insert(occupied, {
+			X = pending.x,
+			Z = pending.z,
+			R = 1.75,
+			Id = pending.itemId,
+		})
 	end
 	if eggCount >= 10 then
 		return
@@ -464,39 +508,29 @@ local function placeOneEgg()
 		return
 	end
 
-	local halfX = floor.Size.X / 2 - 1.5
-	local halfZ = floor.Size.Z / 2 - 1.5
-	local x = -halfX
-	while x <= halfX do
-		local z = -halfZ
-		while z <= halfZ do
-			local snappedX = snapQuarter(x)
-			local snappedZ = snapQuarter(z)
-			local clear = true
-			for _, spot in spots do
-				local dx = snappedX - spot[1]
-				local dz = snappedZ - spot[2]
-				if dx * dx + dz * dz < 16 then
-					clear = false
-					break
-				end
-			end
-			if clear then
-				local world = (frame * CFrame.new(snappedX, 0, snappedZ)).Position
-				if (world - root.Position).Magnitude <= 60 then
-					remote:FireServer({
-						itemId = itemId,
-						x = snappedX,
-						z = snappedZ,
-						yaw = 0,
-					})
-					return
-				end
-			end
-			z = z + 4
-		end
-		x = x + 4
+	local origin = frame:PointToObjectSpace(root.Position)
+	local spotX, spotZ = placement.FindFree(area, origin.X, origin.Z, 1.75, occupied, itemId)
+	if spotX == nil or spotZ == nil then
+		return
 	end
+
+	local world = placement.ToWorld(frame, spotX, spotZ, 0).Position
+	if (world - root.Position).Magnitude > 60 then
+		return
+	end
+
+	remote:FireServer({
+		itemId = itemId,
+		x = spotX,
+		z = spotZ,
+		yaw = 0,
+	})
+	table.insert(pendingPlaces, {
+		x = spotX,
+		z = spotZ,
+		itemId = itemId,
+		time = now,
+	})
 end
 
 local function hatchOneEgg()
@@ -634,7 +668,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.20"
+local VERSION = "2026-11-02.21"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
