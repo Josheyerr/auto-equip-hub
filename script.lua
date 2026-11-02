@@ -415,6 +415,20 @@ local function myBase()
 	return nil
 end
 
+local function homePosition()
+	local base = myBase()
+	local floor = base and base:FindFirstChild("Floor")
+	if floor and floor:IsA("BasePart") then
+		return (floor.CFrame * CFrame.new(0, floor.Size.Y / 2 + 3, 0)).Position
+	end
+
+	local goal = goalCFrame()
+	if goal then
+		return goal.Position
+	end
+	return nil
+end
+
 local pendingPlaces = {}
 local placementApi = nil
 
@@ -985,7 +999,7 @@ local function followPath(humanoid, root, destination, token, stopIfCarrying, eg
 			clearPathLine()
 			return
 		end
-		if not stopIfCarrying and not carrying then
+		if not stopIfCarrying and not carrying and (root.Position - destination).Magnitude > 45 then
 			clearPathLine()
 			return
 		end
@@ -1021,7 +1035,10 @@ local function followPath(humanoid, root, destination, token, stopIfCarrying, eg
 				clearPathLine()
 				return
 			end
-			if playerSteering() or (not stopIfCarrying and not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg"))) then
+			local lostEggFarFromHome = not stopIfCarrying
+				and not isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg"))
+				and (root.Position - destination).Magnitude > 45
+			if playerSteering() or lostEggFarFromHome then
 				break
 			end
 			if stopIfCarrying and (isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) or #eggItemIds() >= eggsBeforeReturn) then
@@ -1044,6 +1061,19 @@ local function followPath(humanoid, root, destination, token, stopIfCarrying, eg
 		else
 			index = index + 1
 		end
+	end
+
+	local approachStarted = os.clock()
+	while root.Parent and (root.Position - destination).Magnitude > 5 and os.clock() - approachStarted < 8 do
+		if token ~= pathToken or not autoPath or not alive or playerSteering() then
+			break
+		end
+		local moveSpeed = gameMoveSpeed()
+		if humanoid.WalkSpeed ~= moveSpeed then
+			humanoid.WalkSpeed = moveSpeed
+		end
+		humanoid:MoveTo(destination)
+		task.wait(0.15)
 	end
 	clearPathLine()
 end
@@ -1094,7 +1124,7 @@ getgenv().AutoEquipHub = {
 	Unload = unload,
 }
 
-local VERSION = "2026-11-02.31"
+local VERSION = "2026-11-02.32"
 
 local Window = Rayfield:CreateWindow({
 	Name = "Auto Equip",
@@ -1450,18 +1480,18 @@ task.spawn(function()
 				local carryingEgg = isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg"))
 				local inventoryFull = #eggItemIds() >= eggsBeforeReturn
 				if carryingEgg or inventoryFull then
-					local home = goalCFrame()
-					if home and (root.Position - home.Position).Magnitude > 8 then
-						followPath(humanoid, root, home.Position, token, false)
+					local home = homePosition()
+					if home and (root.Position - home).Magnitude > 5 then
+						followPath(humanoid, root, home, token, false)
 					end
 				else
 					local egg, destination = bestReachableEgg()
 					if egg and destination then
 						followPath(humanoid, root, destination, token, true, egg)
 						if token == pathToken and autoPath and isCarryingEgg(LocalPlayer:GetAttribute("CarryingEgg")) then
-							local home = goalCFrame()
+							local home = homePosition()
 							if home then
-								followPath(humanoid, root, home.Position, token, false)
+								followPath(humanoid, root, home, token, false)
 							end
 						end
 					end
