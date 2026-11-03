@@ -1,4 +1,3 @@
-source.lua
-carrot.lua
+src/
 hub.lua
 obfuscate.py
